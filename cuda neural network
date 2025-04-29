@@ -73,3 +73,17 @@ plt.legend()
 plt.grid(True)
 plt.tight_layout()
 plt.show()
+
+raceback (most recent call last):
+  File "/home/amir/Proj_Neur/cuda.py", line 63, in <module>
+    plt.plot(losses, label=name)
+                    ^^^^^^^^^^^^
+  File "/home/amir/Proj_Neur/cuda.py", line 42, in train_model
+  File "/home/amir/neuralnetwork/lib/python3.13/site-packages/torch/utils/data/dataloader.py", line 729, in __next__
+    with torch.autograd.profiler.record_function(self._profile_name):
+         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/home/amir/neuralnetwork/lib/python3.13/site-packages/torch/autograd/profiler.py", line 776, in __exit__
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any):
+    
+KeyboardInterrupt
+
