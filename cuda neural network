@@ -1,125 +1,75 @@
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.datasets import make_moons
-from sklearn.model_selection import train_test_split
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("🖥️ Appareil utilisé :", device)
+# Préparation des données MNIST
+transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,), (0.5,))
+])
+trainset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+trainloader = DataLoader(trainset, batch_size=64, shuffle=True)
 
-t64 = torch.randn((2, 2), dtype=torch.float64)
-print("\nDémo réduction de précision :")
-print("Float64 :", t64.dtype)
-
-t32 = t64.float()
-print("Float32 :", t32.dtype)
-
-t16 = t32.half()
-print("Float16 :", t16.dtype)
-
-X, y = make_moons(n_samples=1000, noise=0.2, random_state=42)
-X = torch.tensor(X, dtype=torch.float32).to(device)
-y = torch.tensor(y, dtype=torch.float32).view(-1, 1).to(device)
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-
+# Modèle MLP simple
 class MLP(nn.Module):
     def __init__(self):
         super().__init__()
         self.model = nn.Sequential(
-            nn.Linear(2, 8),
+            nn.Flatten(),
+            nn.Linear(28*28, 128),
             nn.ReLU(),
-            nn.Linear(8, 1),
-            nn.Sigmoid()
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, 10)
         )
 
     def forward(self, x):
         return self.model(x)
 
-net = MLP().to(device)
+# Entraînement d'un modèle avec un optimiseur donné
+def train_model(optimizer_class, name, epochs=10):
+    model = MLP()
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optimizer_class(model.parameters(), lr=0.01)
+    losses = []
 
-# passer tout en float16  :
-# net = net.half()
-# X_train = X_train.half()
-# y_train = y_train.half()
-# X_test = X_test.half()
-# y_test = y_test.half()
+    for _ in range(epochs):
+        model.train()
+        running_loss = 0.0
+        for images, labels in trainloader:
+            outputs = model(images)
+            loss = criterion(outputs, labels)
 
-criterion = nn.BCELoss()  
-optimizer = optim.SGD(net.parameters(), lr=0.01)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-losses = []
-for epoch in range(200):
-    net.train()
-    y_pred = net(X_train)
-    loss = criterion(y_pred, y_train)
-    losses.append(loss.item())
+            running_loss += loss.item()
+        losses.append(running_loss / len(trainloader))
+    return losses
 
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
+# Comparaison des trois optimiseurs
+optimizers = {
+    'SGD': optim.SGD,
+    'Adam': optim.Adam,
+    'ASGD': optim.ASGD
+}
 
-    if epoch % 20 == 0:
-        print(f"Époque {epoch} | Perte : {loss.item():.4f}")
+results = {}
+for name, opt_class in optimizers.items():
+    results[name] = train_model(opt_class, name)
 
-net.eval()
-with torch.no_grad():
-    predictions = net(X_test) >= 0.5
-    accuracy = (predictions == y_test).float().mean()
-    print(f"\n🎯 Précision sur test : {accuracy.item()*100:.2f}%")
-
-plt.plot(losses)
-plt.title("Courbe de perte (Loss)")
-plt.xlabel("Époque")
-plt.ylabel("Loss")
-plt.grid()
+# Affichage des courbes de perte
+plt.figure(figsize=(10, 6))
+for name, losses in results.items():
+    plt.plot(losses, label=name)
+plt.xlabel("Époques")
+plt.ylabel("Perte moyenne")
+plt.title("Comparaison des optimiseurs (MNIST)")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
 plt.show()
-
-
-🎯 Précision sur test : 88.50%
-/home/amir/Proj_Neur/cuda.py:78: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
-  plt.show()
-(neuralnetwork) [amir@amyti Proj_Neur]$ python cuda.py 
-🖥️ Appareil utilisé : cuda
-
-Démo réduction de précision :
-Float64 : torch.float64
-Float32 : torch.float32
-Float16 : torch.float16
-Époque 0 | Perte : 0.6792
-Époque 20 | Perte : 0.6758
-Époque 40 | Perte : 0.6723
-Époque 60 | Perte : 0.6687
-Époque 80 | Perte : 0.6650
-Époque 100 | Perte : 0.6612
-Époque 120 | Perte : 0.6572
-Époque 140 | Perte : 0.6532
-Époque 160 | Perte : 0.6489
-Époque 180 | Perte : 0.6446
-
-🎯 Précision sur test : 70.00%
-/home/amir/Proj_Neur/cuda.py:78: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
-  plt.show()
-(neuralnetwork) [amir@amyti Proj_Neur]$ python cuda.py 
-🖥️ Appareil utilisé : cuda
-
-Démo réduction de précision :
-Float64 : torch.float64
-Float32 : torch.float32
-Float16 : torch.float16
-Époque 0 | Perte : 0.7806
-Époque 20 | Perte : 0.7547
-Époque 40 | Perte : 0.7310
-Époque 60 | Perte : 0.7089
-Époque 80 | Perte : 0.6882
-Époque 100 | Perte : 0.6686
-Époque 120 | Perte : 0.6499
-Époque 140 | Perte : 0.6321
-Époque 160 | Perte : 0.6150
-Époque 180 | Perte : 0.5986
-
-🎯 Précision sur test : 85.00%
-/home/amir/Proj_Neur/cuda.py:78: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
-  plt.show()
