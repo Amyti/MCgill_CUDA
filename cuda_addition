@@ -1,0 +1,48 @@
+import torch
+import time
+
+#N = 500_000_000  
+M, N, K = 10000, 10000, 10000
+A = torch.rand(M, K)
+B = torch.rand(K, N)
+#a_cpu = torch.rand(N)
+#b_cpu = torch.rand(N)
+
+start_cpu = time.time()
+#c_cpu = a_cpu + b_cpu
+C = torch.matmul(A, B) 
+end_cpu = time.time()
+
+print(f"CPU : {end_cpu - start_cpu:.6f} secondes")
+nb_op = 2*M*N*K
+
+flops = nb_op / (end_cpu - start_cpu)
+print(f'{flops:.2e} FLOPS')
+
+if torch.cuda.is_available():
+    A_gpu = A.to('cuda')
+    B_gpu = B.to('cuda')
+
+    #a_gpu = a_cpu.to('cuda')  
+    #b_gpu = b_cpu.to('cuda')
+
+    torch.cuda.synchronize()
+
+    start_gpu = time.time()
+    #c_gpu = a_gpu + b_gpu
+
+    C = torch.matmul(A, B)
+    torch.cuda.synchronize()  
+    end_gpu = time.time()
+
+    print(f"GPU CUDA : {end_gpu - start_gpu:.6f} secondes")
+
+    nb_op = 2*M*N*K
+
+    flops = nb_op / (end_gpu - start_gpu)
+    print(f'{flops:.2e} FLOPS')
+    
+
+
+else:
+    print("CUDA non disponible sur cette machine.")
