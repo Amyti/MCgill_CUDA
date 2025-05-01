@@ -20,7 +20,7 @@ transform = transforms.Compose([
     transforms.Normalize((0.5,), (0.5,))
 ])
 trainset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-trainloader = DataLoader(trainset, batch_size=64, shuffle=True)
+trainloader = DataLoader(trainset, batch_size=41096, shuffle=True)
 
 class MLP(nn.Module):
     def __init__(self):
@@ -41,13 +41,13 @@ class MLP(nn.Module):
 def entrainer(optimiseur_type,nom, epochs=10):
     model = MLP().to(device)
     loss_fn = nn.CrossEntropyLoss()
-    optimiseur = optimiseur_type(model.parameters(), lr=0.01)
+    optimiseur = optimiseur_type(model.parameters(), lr=0.08)
     pertes = []
 
     for _ in tqdm(range(epochs), desc=f"apprentissage avec l'optimiseur {nom}"):
         model.train()
         perte_totale = 0
-        
+
         for images, labels in trainloader:
             images = images.to(device)
             labels = labels.to(device)
