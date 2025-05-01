@@ -4,8 +4,17 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
+import time
+from tqdm import tqdm
 
-# Préparation des données MNIST
+
+app = int(input("1 pour utiliser CUDA et autre pour utiliser le CPU : "))
+
+
+device = torch.device("cuda" if torch.cuda.is_available() and app ==1 else "cpu")
+print(f'utilisation de : {device}')
+
+
 transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.5,), (0.5,))
@@ -13,7 +22,6 @@ transform = transforms.Compose([
 trainset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
 trainloader = DataLoader(trainset, batch_size=64, shuffle=True)
 
-# Modèle simple : MLP avec 2 couches cachées
 class MLP(nn.Module):
     def __init__(self):
         super().__init__()
@@ -30,17 +38,19 @@ class MLP(nn.Module):
         x = self.fc3(x)
         return x
 
-# Fonction d'entraînement
-def entrainer(optimiseur_type, epochs=10):
-    model = MLP()
+def entrainer(optimiseur_type,nom, epochs=10):
+    model = MLP().to(device)
     loss_fn = nn.CrossEntropyLoss()
     optimiseur = optimiseur_type(model.parameters(), lr=0.01)
     pertes = []
 
-    for _ in range(epochs):
+    for _ in tqdm(range(epochs), desc=f"apprentissage avec l'optimiseur {nom}"):
         model.train()
         perte_totale = 0
+        
         for images, labels in trainloader:
+            images = images.to(device)
+            labels = labels.to(device)
             pred = model(images)
             perte = loss_fn(pred, labels)
 
@@ -50,21 +60,27 @@ def entrainer(optimiseur_type, epochs=10):
 
             perte_totale += perte.item()
         pertes.append(perte_totale / len(trainloader))
+    
     return pertes
 
-# Liste des optimiseurs à tester
 types_optimiseurs = {
     "SGD": optim.SGD,
     "Adam": optim.Adam,
     "ASGD": optim.ASGD
 }
 
-# Lancer l'entraînement pour chaque optimiseur
 resultats = {}
-for nom, opt in types_optimiseurs.items():
-    resultats[nom] = entrainer(opt)
+torch.cuda.synchronize()
+debut = time.time()
 
-# Afficher les courbes de perte
+for nom, opt in types_optimiseurs.items():
+    resultats[nom] = entrainer(opt, nom)
+
+torch.cuda.synchronize()
+fin = time.time()
+
+print(f'durée total : {f"{(fin-debut)} secondes" if (fin-debut) < 60 else f"{((fin-debut)/60)} minutes" }')
+
 plt.figure(figsize=(10, 6))
 for nom, pertes in resultats.items():
     plt.plot(pertes, label=nom)
