@@ -90,3 +90,31 @@ plt.title("Comparaison des optimiseurs")
 plt.legend()
 plt.grid(True)
 plt.show()
+
+Thu May  1 12:21:07 2025       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.133.07             Driver Version: 570.133.07     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 3080        Off |   00000000:01:00.0  On |                  N/A |
+|  0%   61C    P2            108W /  340W |    1069MiB /  10240MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A             751      G   /usr/bin/gnome-shell                    125MiB |
+|    0   N/A  N/A            1097      G   /usr/bin/Xwayland                         8MiB |
+|    0   N/A  N/A            1770    C+G   /usr/bin/kgx                             46MiB |
+|    0   N/A  N/A            2640      G   /usr/lib/firefox/firefox                154MiB |
+|    0   N/A  N/A            3271    C+G   /usr/bin/nautilus                        22MiB |
+|    0   N/A  N/A            3365      G   ...ess --variations-seed-version         44MiB |
+|    0   N/A  N/A            3655    C+G   tecla                                    23MiB |
+|    0   N/A  N/A            4687      C   python                                  546MiB |
++-----------------------------------------------------------------------------------------+
