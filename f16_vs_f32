@@ -1,0 +1,34 @@
+import torch
+import time
+
+M, N, K = 4096, 4096, 4096
+
+A_fp32 = torch.rand(M, K, device='cuda', dtype=torch.float32)
+B_fp32 = torch.rand(K, N, device='cuda', dtype=torch.float32)
+
+A_fp16 = A_fp32.to(dtype=torch.float16)
+B_fp16 = B_fp32.to(dtype=torch.float16)
+
+torch.cuda.synchronize()
+start_fp32 = time.time()
+C_fp32 = torch.matmul(A_fp32, B_fp32)
+torch.cuda.synchronize()
+end_fp32 = time.time()
+
+time_fp32 = end_fp32 - start_fp32
+flops_fp32 = 2 * M * N * K / time_fp32
+
+torch.cuda.synchronize()
+start_fp16 = time.time()
+C_fp16 = torch.matmul(A_fp16, B_fp16)
+torch.cuda.synchronize()
+end_fp16 = time.time()
+
+time_fp16 = end_fp16 - start_fp16
+flops_fp16 = 2 * M * N * K / time_fp16
+
+print(f"FP32  : {time_fp32:.4f} s | {flops_fp32:.2e} FLOPS")
+print(f" FP16  : {time_fp16:.4f} s | {flops_fp16:.2e} FLOPS")
+
+C_fp16_upcast = C_fp16.to(dtype=torch.float32)
+relative_error = (C_fp32 - C_fp16_upcast).abs().mean() / C_fp32.abs().mean()
