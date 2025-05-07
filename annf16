@@ -1,0 +1,97 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torchvision import datasets, transforms
+from tqdm import tqdm
+import time
+
+# Configuration
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Device: {device}")
+
+# Préparation des données
+transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,), (0.5,))
+])
+testset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
+testloader = torch.utils.data.DataLoader(testset, batch_size=512, shuffle=False)
+
+# Modèle simple
+class sANN(nn.Module):
+    def __init__(self):
+        super(sANN, self).__init__()
+        self.fc1 = nn.Linear(28*28, 256)
+        self.dropout1 = nn.Dropout(0.2)
+        self.fc2 = nn.Linear(256, 128)
+        self.dropout2 = nn.Dropout(0.2)
+        self.fc3 = nn.Linear(128, 10)
+
+    def forward(self, x):
+        x = x.view(x.size(0), -1)
+        x = torch.relu(self.dropout1(self.fc1(x)))
+        x = torch.relu(self.dropout2(self.fc2(x)))
+        return self.fc3(x)
+
+# Entraîne rapidement un modèle si aucun n'est sauvegardé
+def train_model():
+    model = sANN().to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+    trainset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=512, shuffle=True)
+
+    model.train()
+    for epoch in tqdm(range(2), desc="Training"):
+        for images, labels in trainloader:
+            images, labels = images.to(device), labels.to(device)
+            optimizer.zero_grad()
+            output = model(images)
+            loss = criterion(output, labels)
+            loss.backward()
+            optimizer.step()
+    return model
+
+# Test de l'inférence
+def benchmark_inference(model, dtype=torch.float32):
+    model = model.to(dtype=dtype)
+    correct = 0
+    total = 0
+    total_time = 0
+    model.eval()
+
+    with torch.no_grad():
+        for images, labels in testloader:
+            images = images.to(device).to(dtype=dtype)
+            labels = labels.to(device)
+
+            start = time.time()
+            outputs = model(images)
+            torch.cuda.synchronize()
+            total_time += time.time() - start
+
+            _, preds = torch.max(outputs, 1)
+            total += labels.size(0)
+            correct += (preds == labels).sum().item()
+
+    acc = correct / total * 100
+    return total_time, acc
+
+# Entraînement et sauvegarde
+model_fp32 = train_model()
+torch.save(model_fp32.state_dict(), "sann_mnist.pth")
+
+# Chargement et test en float32
+model_fp32.load_state_dict(torch.load("sann_mnist.pth"))
+model_fp32 = model_fp32.to(device)
+t_f32, acc_f32 = benchmark_inference(model_fp32, torch.float32)
+
+# Test en float16
+model_fp16 = sANN().half().to(device)
+model_fp16.load_state_dict(torch.load("sann_mnist.pth"))
+t_f16, acc_f16 = benchmark_inference(model_fp16, torch.float16)
+
+# Résultats
+print(f"Inférence FP32 : {t_f32:.4f} s | Acc : {acc_f32:.2f}%")
+print(f"Inférence FP16 : {t_f16:.4f} s | Acc : {acc_f16:.2f}%")
