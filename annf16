@@ -1,13 +1,3 @@
-float 32
-Traceback (most recent call last):
-  File "/home/amir/Proj_Neur/ann.py", line 90, in <module>
-    test_inference(model, torch.float32)
-    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/amir/Proj_Neur/ann.py", line 79, in test_inference
-    current_blocks = torch.cuda.memory_stats()["allocation.active"]
-                     ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
-KeyError: 'allocation.active'
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -83,32 +73,26 @@ def test_inference(model, dtype=torch.float32):
         end = time.time()
         after_alloc = torch.cuda.memory_allocated()
         after_reserved = torch.cuda.memory_reserved()
-        peak_memory = torch.cuda.max_memory_allocated()
 
     used_memory = (after_alloc - before_alloc) / (1024 ** 2)
-    reserved_memory = (after_reserved - before_reserved) / (1024 ** 2)
-    peak_memory = peak_memory / (1024 ** 2)
     inference_time = end - start
-    current_blocks = torch.cuda.memory_stats()["allocation.active"]
-    peak_blocks = torch.cuda.memory_stats()["allocation.peak"]
 
-    print(f"\n🧠 Mémoire utilisée : {used_memory:.2f} MB")
-    print(f"📦 Mémoire réservée : {reserved_memory:.2f} MB")
-    print(f"📈 Pic mémoire : {peak_memory:.2f} MB")
-    print(f"🔢 Blocs actifs CUDA : {current_blocks}")
-    print(f"🔢 Blocs au pic : {peak_blocks}")
-    print(f"⏱️ Temps d'inférence : {inference_time:.4f} s")
+    stats = torch.cuda.memory_stats()
+
+    current_blocks = stats.get("active_bytes.all.current", 0)
+
+    print(f"memory used : {used_memory:.2f} MB")
+    print(f"activated CUDA blocs : {current_blocks}")
+    print(f"time forward propagation : {inference_time:.4f} s")
 
 model = entrainement()
 torch.save(model.state_dict(), "poids.pth")
 
-# Test FP32
-print("\n=== Test FP32 ===")
+print("float 32")
 model.load_state_dict(torch.load("poids.pth"))
 test_inference(model, torch.float32)
 
-# Test FP16
-print("\n=== Test FP16 ===")
+print("float 16")
 model_fp16 = sANN().half().to(device)
 model_fp16.load_state_dict(torch.load("poids.pth"))
 test_inference(model_fp16, torch.float16)
