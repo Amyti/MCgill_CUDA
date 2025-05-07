@@ -5,6 +5,9 @@ from torchvision import datasets, transforms
 from tqdm import tqdm
 import time
 
+# Pour maximiser les perf CUDA
+torch.backends.cudnn.benchmark = True
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Device: {device}")
 
@@ -34,7 +37,7 @@ class sANN(nn.Module):
 def entrainement():
     model = sANN().to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
     trainset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=512, shuffle=True)
 
@@ -51,55 +54,52 @@ def entrainement():
     torch.save(model.state_dict(), "poids.pth")
     return model
 
-def test_inference(model, dtype=torch.float32):
-    model.eval()
-    model = model.to(device)
+def test_inference(model, dtype=torch.float32, warmup=10, runs=100):
+    model.eval().to(device)
+    if dtype == torch.float16:
+        model.half()  # conversion des poids en FP16
 
-    images, labels = next(iter(testloader))
+    images, _ = next(iter(testloader))
     images = images.to(device)
-    labels = labels.to(device)
+    if dtype == torch.float16:
+        images = images.half()  # conversion des entrées
 
+    # reset et warm-up
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
     torch.cuda.synchronize()
+    for _ in range(warmup):
+        with torch.no_grad():
+            model(images)
+    torch.cuda.synchronize()
 
     start_mem = torch.cuda.memory_allocated()
-
     start = time.time()
-
-    with torch.no_grad():
-        if dtype == torch.float16:
-            with torch.cuda.amp.autocast():
-                outputs = model(images)
-        else:
-            outputs = model(images)
-
+    for _ in range(runs):
+        with torch.no_grad():
+            model(images)
     torch.cuda.synchronize()
     end = time.time()
-
     end_mem = torch.cuda.memory_allocated()
     peak_mem = torch.cuda.max_memory_allocated()
-    inference_time = end - start
 
-    used_mem = (end_mem - start_mem) / (1024**2)
-    peak_mem_MB = peak_mem / (1024**2)
+    used_mem = (end_mem - start_mem) / 1024**2
+    peak_mem = peak_mem / 1024**2
+    avg_time = (end - start) / runs
 
-    stats = torch.cuda.memory_stats()
-    active_blocks = stats.get("active_bytes.all.current", 0) / (1024**2)
+    print(f"=== inference {dtype} ===")
+    print(f"Memory allocated : {used_mem:.2f} MB")
+    print(f"Peak memory      : {peak_mem:.2f} MB")
+    print(f"Avg forward time : {avg_time:.6f} s over {runs} runs\n")
 
-    print(f"=== forward  {dtype} ===")
-    print(f"🧠 memory allocated : {used_mem:.2f} MB")
-    print(f"📈 peak memory       : {peak_mem_MB:.2f} MB")
-    print(f"🧱 active bytes      : {active_blocks:.2f} MB")
-    print(f"⚡️ forward time      : {inference_time:.4f} s\n")
+# Exécution
+model32 = entrainement()
 
-model = entrainement()
+print("float32")
+model32.load_state_dict(torch.load("poids.pth"))
+test_inference(model32, torch.float32)
 
-print("float 32")
-model.load_state_dict(torch.load("poids.pth"))
-test_inference(model, torch.float32)
-
-print("float 16")
-model_fp16 = sANN().to(device)
-model_fp16.load_state_dict(torch.load("poids.pth"))
-test_inference(model_fp16, torch.float16)
+print("float16")
+model16 = sANN()
+model16.load_state_dict(torch.load("poids.pth"))
+test_inference(model16, torch.float16)
