@@ -5,7 +5,7 @@ from torchvision import datasets, transforms
 from tqdm import tqdm
 import time
 
-# Pour maximiser les perf CUDA
+# Accélère un peu sur CUDA
 torch.backends.cudnn.benchmark = True
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -55,44 +55,55 @@ def entrainement():
     return model
 
 def test_inference(model, dtype=torch.float32, warmup=10, runs=100):
+    # 1. Prépare le modèle
     model.eval().to(device)
     if dtype == torch.float16:
-        model.half()  # conversion des poids en FP16
+        model.half()                # conversion des poids en FP16
 
+    # 2. Prépare les images
     images, _ = next(iter(testloader))
     images = images.to(device)
     if dtype == torch.float16:
-        images = images.half()  # conversion des entrées
+        images = images.half()      # conversion des entrées en FP16
 
-    # reset et warm-up
+    # 3. Vide la cache et synchronise
     torch.cuda.empty_cache()
+    torch.cuda.synchronize()
+
+    # 4. Baseline mémoire (modèle + poids)
+    baseline_mem = torch.cuda.memory_allocated()
+
+    # 5. Réinitialise les compteurs de pic
     torch.cuda.reset_peak_memory_stats()
     torch.cuda.synchronize()
+
+    # 6. Warm-up
     for _ in range(warmup):
         with torch.no_grad():
             model(images)
     torch.cuda.synchronize()
 
-    start_mem = torch.cuda.memory_allocated()
+    # 7. Mesure du temps
     start = time.time()
     for _ in range(runs):
         with torch.no_grad():
             model(images)
     torch.cuda.synchronize()
     end = time.time()
-    end_mem = torch.cuda.memory_allocated()
+
+    # 8. Récupère le pic de mémoire
     peak_mem = torch.cuda.max_memory_allocated()
 
-    used_mem = (end_mem - start_mem) / 1024**2
-    peak_mem = peak_mem / 1024**2
+    # 9. Calcule la mémoire d’inférence (en MB)
+    inf_mem_MB = (peak_mem - baseline_mem) / (1024**2)
     avg_time = (end - start) / runs
 
-    print(f"=== inference {dtype} ===")
-    print(f"Memory allocated : {used_mem:.2f} MB")
-    print(f"Peak memory      : {peak_mem:.2f} MB")
-    print(f"Avg forward time : {avg_time:.6f} s over {runs} runs\n")
+    print(f"=== inference {dtype.__name__} ===")
+    print(f"Memory for inference : {inf_mem_MB:.2f} MB")
+    print(f"Peak total memory     : {peak_mem / (1024**2):.2f} MB")
+    print(f"Avg forward time      : {avg_time:.6f} s over {runs} runs\n")
 
-# Exécution
+# === Exécution ===
 model32 = entrainement()
 
 print("float32")
