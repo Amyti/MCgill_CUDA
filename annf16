@@ -63,36 +63,28 @@ def test_inference(model, dtype=torch.float32):
 
     with torch.no_grad():
         torch.cuda.synchronize()
-        before_alloc = torch.cuda.memory_allocated()
-        before_reserved = torch.cuda.memory_reserved()
-        start = time.time()
-
-        outputs = model(images)
-
+        start_time = time.time()
+        _ = model(images)
         torch.cuda.synchronize()
-        end = time.time()
-        after_alloc = torch.cuda.memory_allocated()
-        after_reserved = torch.cuda.memory_reserved()
-
-    used_memory = (after_alloc - before_alloc) / (1024 ** 2)
-    inference_time = end - start
+        end_time = time.time()
 
     stats = torch.cuda.memory_stats()
+    mem_allocated = stats["allocated_bytes.all.current"] / 1024**2
+    blocks_active = stats["active.all.current"]
+    inference_time = end_time - start_time
 
-    current_blocks = stats.get("active.all.current", 0)
-
-    print(f"memory used : {stats['allocated_bytes.all.current'] / (1024**2):.2f} MB")
-    print(f"activated CUDA blocs : {current_blocks}")
-    print(f"time forward propagation : {inference_time:.4f} s")
+    print(f"🧠 Mémoire allouée : {mem_allocated:.2f} MB")
+    print(f"📦 Blocs actifs CUDA : {blocks_active}")
+    print(f"⏱️ Temps d'inférence : {inference_time:.4f} s")
 
 model = entrainement()
 torch.save(model.state_dict(), "poids.pth")
 
-print("float 32")
+print("\n=== Inférence FLOAT32 ===")
 model.load_state_dict(torch.load("poids.pth"))
 test_inference(model, torch.float32)
 
-print("float 16")
+print("\n=== Inférence FLOAT16 ===")
 model_fp16 = sANN().half().to(device)
 model_fp16.load_state_dict(torch.load("poids.pth"))
 test_inference(model_fp16, torch.float16)
