@@ -79,9 +79,9 @@ def test_inference(model, dtype=torch.float32):
 
     stats = torch.cuda.memory_stats()
 
-    current_blocks = stats.get("active_bytes.all.current", 0)
+    current_blocks = stats.get("active.all.current", 0)
 
-    print(f"memory used : {used_memory:.2f} MB")
+    print(f"memory used : {stats['allocated_bytes.all.current'] / (1024**2):.2f} MB")
     print(f"activated CUDA blocs : {current_blocks}")
     print(f"time forward propagation : {inference_time:.4f} s")
 
