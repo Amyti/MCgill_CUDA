@@ -1,3 +1,13 @@
+=== forward  float 32 ===
+memory allocated : 18.43 MB
+actived bloc cuda : 17
+forward prop time : 0.0003 s
+=== forward  float 16 ===
+memory allocated : 18.69 MB
+actived bloc cuda : 23
+forward prop time : 0.0909 s
+
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
