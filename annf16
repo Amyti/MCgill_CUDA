@@ -5,6 +5,7 @@ from torchvision import datasets, transforms
 from tqdm import tqdm
 import time
 
+torch.manual_seed(0)
 torch.backends.cudnn.benchmark = True
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -18,30 +19,35 @@ transform = transforms.Compose([
 testset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
 testloader = torch.utils.data.DataLoader(testset, batch_size=512, shuffle=False)
 
+lr = 1e-3
+
 class sANN(nn.Module):
     def __init__(self):
         super(sANN, self).__init__()
         self.fc1 = nn.Linear(28*28, 256)
+        self.bn1 = nn.BatchNorm1d(256)
         self.dropout1 = nn.Dropout(0.2)
         self.fc2 = nn.Linear(256, 128)
+        self.bn2 = nn.BatchNorm1d(128)
         self.dropout2 = nn.Dropout(0.2)
         self.fc3 = nn.Linear(128, 10)
 
     def forward(self, x):
         x = x.view(x.size(0), -1)
-        x = torch.relu(self.dropout1(self.fc1(x)))
-        x = torch.relu(self.dropout2(self.fc2(x)))
+        x = torch.relu(self.bn1(self.dropout1(self.fc1(x))))
+        x = torch.relu(self.bn2(self.dropout2(self.fc2(x))))
         return self.fc3(x)
 
 def entrainement():
     model = sANN().to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
     trainset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=512, shuffle=True)
 
     model.train()
-    for epoch in tqdm(range(1), desc="Training"):
+    for epoch in tqdm(range(15), desc="Training"):
         for images, labels in trainloader:
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -49,6 +55,7 @@ def entrainement():
             loss = criterion(output, labels)
             loss.backward()
             optimizer.step()
+        scheduler.step()
 
     torch.save(model.state_dict(), "poids.pth")
     return model
