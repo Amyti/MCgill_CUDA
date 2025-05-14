@@ -1,0 +1,116 @@
+import torch, torch.nn as nn, torch.optim as optim
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+import time
+
+# reproducibility
+torch.manual_seed(0)
+device = torch.device("cuda")
+
+# data
+transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(.5, .5)])
+train_ds = datasets.MNIST('./data', train=True,  download=True, transform=transform)
+test_ds  = datasets.MNIST('./data', train=False, download=True, transform=transform)
+train_loader = DataLoader(train_ds, batch_size=2048, shuffle=True,  pin_memory=True)
+test_loader  = DataLoader(test_ds,  batch_size=2048, shuffle=False, pin_memory=True)
+
+# a slightly bigger CNN
+class ConvMLP(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(1,32,3,1), nn.ReLU(),
+            nn.Conv2d(32,64,3,1), nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Flatten()
+        )
+        self.fc = nn.Sequential(
+            nn.Linear(64*12*12,512), nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(512,10)
+        )
+    def forward(self,x):
+        return self.fc(self.conv(x))
+
+def benchmark_training(model, use_amp):
+    model.to(device).train()
+    opt = optim.Adam(model.parameters(), lr=1e-3)
+    scaler = torch.cuda.amp.GradScaler() if use_amp else None
+    criterion = nn.CrossEntropyLoss()
+    torch.cuda.synchronize()
+    t0 = time.time()
+    for epoch in range(5):
+        for imgs, labs in train_loader:
+            imgs, labs = imgs.to(device), labs.to(device)
+            opt.zero_grad()
+            if use_amp:
+                with torch.cuda.amp.autocast():
+                    out = model(imgs); loss = criterion(out,labs)
+                scaler.scale(loss).backward()
+                scaler.step(opt); scaler.update()
+            else:
+                out = model(imgs); loss = criterion(out,labs)
+                loss.backward(); opt.step()
+    torch.cuda.synchronize()
+    return time.time()-t0
+
+def benchmark_inference(model, dtype):
+    model.to(device).eval()
+    if dtype==torch.float16:
+        model.half()
+
+    # prepare one batch for timing
+    imgs, _ = next(iter(test_loader))
+    imgs = imgs.to(device)
+    if dtype==torch.float16:
+        imgs = imgs.half()
+
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+    torch.cuda.synchronize()
+
+    # warmup
+    for _ in range(5):
+        with torch.no_grad():
+            _ = model(imgs)
+    torch.cuda.synchronize()
+
+    # timing
+    start = time.time()
+    for _ in range(100):
+        with torch.no_grad():
+            _ = model(imgs)
+    torch.cuda.synchronize()
+    avg_time = (time.time() - start) / 100
+
+    # memory
+    peak_mem = torch.cuda.max_memory_allocated() / 1e6  # MB
+
+    # accuracy over entire test set
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for imgs, labs in test_loader:
+            imgs, labs = imgs.to(device), labs.to(device)
+            if dtype == torch.float16:
+                imgs = imgs.half()
+            outputs = model(imgs)
+            preds = outputs.argmax(dim=1)
+            correct += (preds == labs).sum().item()
+            total += labs.size(0)
+    accuracy = 100.0 * correct / total
+
+    return avg_time, peak_mem, accuracy
+
+net32 = ConvMLP()
+t32 = benchmark_training(net32, use_amp=False)
+inf32, mem32, acc32 = benchmark_inference(net32, torch.float32)
+
+net16 = ConvMLP()
+t16 = benchmark_training(net16, use_amp=True)
+inf16, mem16, acc16 = benchmark_inference(net16, torch.float16)
+
+print(f"TRAIN time:  FP32 = {t32:.2f}s,  AMP = {t16:.2f}s")
+print(f"INFER time:  FP32 = {inf32*1e3:.2f} ms,  FP16 = {inf16*1e3:.2f} ms")
+print(f"PEAK MEM:    FP32 = {mem32:.1f} MB,  FP16 = {mem16:.1f} MB")
+print(f"ACCURACY:    FP32 = {acc32:.2f}%,  FP16 = {acc16:.2f}%")
