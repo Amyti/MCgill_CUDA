@@ -1,4 +1,4 @@
-# fast_train_bucketed.py
+# fast_train_weight_only_bucketed.py
 
 import math
 import time
@@ -25,7 +25,7 @@ transform = transforms.Compose([
 ])
 train_ds = datasets.MNIST('./data', train=True, download=True, transform=transform)
 test_ds  = datasets.MNIST('./data', train=False, download=True, transform=transform)
-train_loader = DataLoader(train_ds, batch_size=512, shuffle=True,  pin_memory=True)
+train_loader = DataLoader(train_ds, batch_size=512, shuffle=True, pin_memory=True)
 test_loader  = DataLoader(test_ds,  batch_size=512, shuffle=False, pin_memory=True)
 
 # MLP model definition
@@ -48,33 +48,35 @@ class sANN(nn.Module):
 
 def bucketed_weights_forward(model: nn.Module, bits_per_bucket: int):
     """
-    Vectorized bucketed mantissa reduction:
-    - Splits absolute weight range into B buckets
-    - Assigns each weight to a bucket index
-    - Retains bucket_idx * bits_per_bucket mantissa bits via frexp/ldexp
+    Vectorized bucketed mantissa reduction for *weights only* (skips biases).
     """
-    for param in model.parameters():
-        if not param.requires_grad:
+    for name, param in model.named_parameters():
+        # Only quantize weight tensors (ndim >= 2), skip biases/1D params
+        if not param.requires_grad or param.ndim < 2:
             continue
+
         W = param.data
         W_abs = W.abs()
-        w_min = W_abs.min()
         w_max = W_abs.max()
+        if w_max == 0:
+            continue
+
+        # Number of buckets
         B = math.ceil(23.0 / bits_per_bucket)
-        step = (w_max - w_min) / B
+        step = w_max / B
 
-        # Compute bucket indices [0 .. B-1]
-        bucket_idx = ((W_abs - w_min) / step).floor().clamp(0, B-1).long()
+        # Compute bucket index for each weight element
+        bucket_idx = ((W_abs / step).floor()).clamp(0, B).long()
 
-        # Bits to keep per element, capped at 23
+        # Bits to keep per element (0..23)
         bits = (bucket_idx * bits_per_bucket).clamp(max=23)
 
-        # Decompose each weight into mantissa and exponent
-        mant, exp = torch.frexp(W)  # mant in [-1,1), exp integer
+        # Decompose into mantissa and exponent
+        mant, exp = torch.frexp(W)
 
-        # Quantize mantissa to the specified number of bits
-        two_bits = torch.pow(2.0, bits.to(W.device).float())
-        quant_mant = torch.sign(mant) * torch.floor(torch.abs(mant) * two_bits) / two_bits
+        # Quantize mantissa
+        two_pow = (2.0 ** bits.to(W.device)).to(W.dtype)
+        quant_mant = torch.sign(mant) * torch.floor(torch.abs(mant) * two_pow) / two_pow
 
         # Reconstruct float32 value
         newW = torch.ldexp(quant_mant, exp)
@@ -82,6 +84,9 @@ def bucketed_weights_forward(model: nn.Module, bits_per_bucket: int):
 
 def train_with_buckets(model, epochs=15, lr=1e-3, weight_decay=1e-4,
                        step_size=5, gamma=0.5, bits_per_bucket=5):
+    """
+    Train model with weight-only bucketed mantissa reduction after each batch.
+    """
     model.to(device).train()
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
@@ -97,20 +102,25 @@ def train_with_buckets(model, epochs=15, lr=1e-3, weight_decay=1e-4,
             loss.backward()
             optimizer.step()
 
-            # Apply bucketed approximation once per batch (vectorized)
+            # Quantize only weights after each batch
             bucketed_weights_forward(model, bits_per_bucket)
-            loop.set_postfix(loss=loss.item())
+            loop.set_postfix(loss=f"{loss.item():.4f}")
         scheduler.step()
     return model
 
 def test_inference(model, dtype=torch.float32, runs=100):
+    """
+    Measure inference time, peak memory, and accuracy for FP32 or FP16.
+    """
     model.to(device).eval()
     if dtype == torch.float16:
         model.half()
+
     images, _ = next(iter(test_loader))
     images = images.to(device)
     if dtype == torch.float16:
         images = images.half()
+
     torch.cuda.reset_peak_memory_stats()
     torch.cuda.synchronize()
 
@@ -120,6 +130,7 @@ def test_inference(model, dtype=torch.float32, runs=100):
             _ = model(images)
     torch.cuda.synchronize()
 
+    # Timing
     start = time.time()
     for _ in range(runs):
         with torch.no_grad():
@@ -144,20 +155,17 @@ def test_inference(model, dtype=torch.float32, runs=100):
     print(f"Accuracy : {accuracy:.2f}%")
     print(f"Avg time  : {avg_time*1e3:.2f} ms")
     print(f"Peak mem  : {peak_mem:.1f} MB\n")
+
     return avg_time, peak_mem, accuracy
 
 if __name__ == "__main__":
     print(f"Device: {device}\n")
 
     model = sANN()
-    print("Training with bucketed approximation...")
+    print("Training with weight-only bucketed approximation...")
     model = train_with_buckets(model, epochs=15, bits_per_bucket=5)
 
-    torch.save(model.state_dict(), "model_bucketed_fast.pth")
+    torch.save(model.state_dict(), "model_weight_bucketed.pth")
 
-    print("\nTesting FP32:")
-    test_inference(model, torch.float32)
-
-    print("Testing FP16:")
-    test_inference(model, torch.float16)
-
+    print("\nTesting:")
+    test_inference(model)
