@@ -5,7 +5,6 @@ from torchvision import datasets, transforms
 from tqdm import tqdm
 import time
 
-# Accélère un peu sur CUDA
 torch.backends.cudnn.benchmark = True
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -55,35 +54,30 @@ def entrainement():
     return model
 
 def test_inference(model, dtype=torch.float32, warmup=10, runs=100):
-    # 1. Prépare le modèle
+
     model.eval().to(device)
     if dtype == torch.float16:
-        model.half()                # conversion des poids en FP16
+        model.half()              
 
-    # 2. Prépare les images
     images, _ = next(iter(testloader))
     images = images.to(device)
     if dtype == torch.float16:
-        images = images.half()      # conversion des entrées en FP16
+        images = images.half()      
 
-    # 3. Vide la cache et synchronise
     torch.cuda.empty_cache()
     torch.cuda.synchronize()
+    base_bloc = torch.cuda.memory_stats().get("active.all.current", 0)
 
-    # 4. Baseline mémoire (modèle + poids)
-    baseline_mem = torch.cuda.memory_allocated()
+    base_mem = torch.cuda.memory_allocated()
 
-    # 5. Réinitialise les compteurs de pic
     torch.cuda.reset_peak_memory_stats()
     torch.cuda.synchronize()
 
-    # 6. Warm-up
     for _ in range(warmup):
         with torch.no_grad():
             model(images)
     torch.cuda.synchronize()
 
-    # 7. Mesure du temps
     start = time.time()
     for _ in range(runs):
         with torch.no_grad():
@@ -91,19 +85,30 @@ def test_inference(model, dtype=torch.float32, warmup=10, runs=100):
     torch.cuda.synchronize()
     end = time.time()
 
-    # 8. Récupère le pic de mémoire
-    peak_mem = torch.cuda.max_memory_allocated()
+    pique_bloc = torch.cuda.memory_stats().get("active.all.peak", 0)
+    pique_mem = torch.cuda.max_memory_allocated()
 
-    # 9. Calcule la mémoire d’inférence (en MB)
-    inf_mem_MB = (peak_mem - baseline_mem) / (1024**2)
-    avg_time = (end - start) / runs
+    inf_mem_MB = (pique_mem - base_mem) / (1024**2)
+    temp = (end - start) / runs
+    bloc_utilise = pique_bloc - base_bloc
+    bon = 0
+    total = 0
+    with torch.no_grad():
+        for image, rep in testloader:
+            image, rep = image.to(device), rep.to(device)
+            if dtype == torch.float16:
+                image = image.half()
+            outputs = model(image)
+            prediction = outputs.argmax(dim=1)
+            bon += (prediction == rep).sum().item()
+            total += rep.size(0)
+    accuracy = 100* bon / total
 
-    print(f"=== inference {dtype.__name__} ===")
-    print(f"Memory for inference : {inf_mem_MB:.2f} MB")
-    print(f"Peak total memory     : {peak_mem / (1024**2):.2f} MB")
-    print(f"Avg forward time      : {avg_time:.6f} s over {runs} runs\n")
+    print(f"=== inference {dtype} ===")
+    print(f"accuracy: {accuracy:.2f}%")
+    print(f"peak memory : {pique_mem / (1024**2):.2f} MB")
+    print(f"time for the forward part : {temp:.6f} s en moyenne sur {runs} runs\n")
 
-# === Exécution ===
 model32 = entrainement()
 
 print("float32")
