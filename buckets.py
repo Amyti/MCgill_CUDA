@@ -1,3 +1,29 @@
+Traceback (most recent call last):
+  File "/home/amir/Proj_Neur/buckets.py", line 167, in <module>
+    model = ann(trainloader, testloader, model, criterion, optimizer, scaler, epochs=15)
+  File "/home/amir/Proj_Neur/buckets.py", line 142, in ann
+    outputs = model(images)
+  File "/home/amir/neuralnetwork/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/amir/neuralnetwork/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/amir/Proj_Neur/buckets.py", line 67, in forward
+    x = torch.relu(self.fc1(x))
+                   ~~~~~~~~^^^
+  File "/home/amir/neuralnetwork/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/amir/neuralnetwork/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/amir/neuralnetwork/lib/python3.13/site-packages/torch/nn/modules/linear.py", line 125, in forward
+    return F.linear(input, self.weight, self.bias)
+           ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: mat1 and mat2 shapes cannot be multiplied (64x12544 and 2304x512)
+(neuralnetwork) [amir@amyti Proj_Neur]$ 
+
+
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
