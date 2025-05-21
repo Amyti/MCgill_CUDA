@@ -1,3 +1,25 @@
+raining...: 100%|████████████████████| 15/15 [01:44<00:00,  6.98s/it]
+/home/amir/Proj_Neur/cnn.py:36: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler('cuda') if use_amp else None
+training...:   0%|                             | 0/15 [00:00<?, ?it/s]
+Traceback (most recent call last):
+  File "/home/amir/Proj_Neur/cnn.py", line 103, in <module>
+    t16 = benchmark_training(net16, use_amp=True)
+  File "/home/amir/Proj_Neur/cnn.py", line 47, in benchmark_training
+    scaler.scale(loss).backward()
+    ~~~~~~~~~~~~^^^^^^
+  File "/home/amir/neuralnetwork/lib/python3.13/site-packages/torch/amp/grad_scaler.py", line 212, in scale
+    self._lazy_init_scale_growth_tracker(outputs.device)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/home/amir/neuralnetwork/lib/python3.13/site-packages/torch/amp/grad_scaler.py", line 172, in _lazy_init_scale_growth_tracker
+    self._scale = torch.full((), self._init_scale, dtype=torch.float32, device=dev)
+                  ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: full() received an invalid combination of arguments - got (tuple, str, device=torch.device, dtype=torch.dtype), but expected one of:
+ * (tuple of ints size, Number fill_value, *, tuple of names names, torch.dtype dtype = None, torch.layout layout = None, torch.device device = None, bool pin_memory = False, bool requires_grad = False)
+ * (tuple of ints size, Number fill_value, *, Tensor out = None, torch.dtype dtype = None, torch.layout layout = None, torch.device device = None, bool pin_memory = False, bool requires_grad = False)
+
+
+
 import torch, torch.nn as nn, torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
@@ -102,8 +124,10 @@ net16 = ConvMLP()
 t16 = benchmark_training(net16, use_amp=True)
 inf16, mem16, acc16 = benchmark_inference(net16, torch.float16)
 
+
 print(f"train  fp32 : {t32:.2f}s,  f16: {t16:.2f}s")
-print(f"speed up (f32/f16): {(f32/f16):.2f}s")
+print(f"speed up (f32/f16): {100 - ((t32/t16) * 100) }% faster ")
 print(f"inference  fp32: {inf32*1e3:.2f} ms,  fp16: {inf16*1e3:.2f} ms")
 print(f"memory:    fp32: {mem32:.1f} MB,  fp16: {mem16:.1f} MB")
 print(f"acc:    fp32: {acc32:.2f}%,  fp16: {acc16:.2f}%")
+
