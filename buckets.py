@@ -30,20 +30,44 @@ testset  = datasets.MNIST(root='./data', train=False, download=True, transform=t
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=64, shuffle=True, pin_memory=True, num_workers=2)
 testloader  = torch.utils.data.DataLoader(testset,  batch_size=64, shuffle=False, pin_memory=True, num_workers=2)
 
+#class sANN(nn.Module):
+#    def __init__(self):
+#        super().__init__()
+#        self.fc1 = nn.Linear(28*28, 256)
+#        self.dropout1 = nn.Dropout(0.2)
+#        self.fc2 = nn.Linear(256, 128)
+#        self.dropout2 = nn.Dropout(0.2)
+#        self.fc3 = nn.Linear(128, 10)
+#
+#    def forward(self, x):
+#        x = x.view(x.size(0), -1)
+#        x = torch.relu(self.dropout1(self.fc1(x)))
+#        x = torch.relu(self.dropout2(self.fc2(x)))
+#        return self.fc3(x)
+#        
 class sANN(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(28*28, 256)
-        self.dropout1 = nn.Dropout(0.2)
-        self.fc2 = nn.Linear(256, 128)
-        self.dropout2 = nn.Dropout(0.2)
-        self.fc3 = nn.Linear(128, 10)
+        self.conv1 = nn.Conv2d(1,  64, kernel_size=3, padding=1)
+        self.bn1   = nn.BatchNorm2d(64)
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+        self.bn2   = nn.BatchNorm2d(128)
+        self.conv3 = nn.Conv2d(128,256, kernel_size=3, padding=1)
+        self.bn3   = nn.BatchNorm2d(256)
+        self.pool  = nn.MaxPool2d(2)
+        self.fc1   = nn.Linear(256*3*3, 512)
+        self.drop  = nn.Dropout(0.4)
+        self.fc2   = nn.Linear(512, 10)
 
     def forward(self, x):
+        x = torch.relu(self.bn1(self.conv1(x)))
+        x = self.pool(torch.relu(self.bn2(self.conv2(x))))
+        x = self.pool(torch.relu(self.bn3(self.conv3(x))))
         x = x.view(x.size(0), -1)
-        x = torch.relu(self.dropout1(self.fc1(x)))
-        x = torch.relu(self.dropout2(self.fc2(x)))
-        return self.fc3(x)
+        x = torch.relu(self.fc1(x))
+        x = self.drop(x)
+        return self.fc2(x)
+
 
 model   = sANN().to(device)
 scaler  = torch.amp.GradScaler('cuda')                       
