@@ -1,8 +1,7 @@
-ntrainement...: 100%|████████████████| 15/15 [01:06<00:00,  4.44s/it]
 memoire utilisée par le gpu : 54.8 mb
-before quantization: Acc: 99.31% in 1.6001665592193604 seconds
-memoire utilisée par le gpu : 54.1 mb
-after quantization: Acc: 95.73% in 1.5348074436187744 seconds
+before quantization: Acc: 99.31% in 1.5442931652069092 seconds
+memoire utilisée par le gpu : 61.5 mb
+after quantization: Acc: 99.31% in 1.4930243492126465 seconds
 
 import torch
 import torch.nn as nn
@@ -189,26 +188,29 @@ end = time.time()
 
 print(f"before quantization: Acc: {test_acc*100:.2f}% in {end - start} seconds")
 
-with torch.no_grad():
-    for name, param in model.named_parameters():
-        if 'weight' not in name:
-            continue
+#with torch.no_grad():
+#    for name, param in model.named_parameters():
+#        if 'weight' not in name:
+#            continue
+#
+#        w = param.data               
+#        a = w.abs()                  
+#
+#        t_bas  = a.quantile(0.33)  
+#        t_haut = a.quantile(0.66)  
+#
+#        mask_bas  = (a <= t_bas)
+#        mask_mid = (a > t_bas) & (a <= t_haut)
+#
+#        w_q = w.clone()
+#
+#        w_q[mask_bas ] = quantization(w[mask_bas ], 2)  
+#        w_q[mask_mid] = quantization(w[mask_mid], 4) 
+#
+#        param.data = w_q
 
-        w = param.data               
-        a = w.abs()                  
+model_int8 = tq.quantize_dynamic(model, {nn.Linear}, dtype=torch.qint8)
 
-        t_bas  = a.quantile(0.33)  
-        t_haut = a.quantile(0.66)  
-
-        mask_bas  = (a <= t_bas)
-        mask_mid = (a > t_bas) & (a <= t_haut)
-
-        w_q = w.clone()
-
-        w_q[mask_bas ] = quantization(w[mask_bas ], 2)  
-        w_q[mask_mid] = quantization(w[mask_mid], 4) 
-
-        param.data = w_q
 
 torch.cuda.synchronize()
 start = time.time()
