@@ -64,25 +64,31 @@ def quantization(x: torch.Tensor, n_bits: int) -> torch.Tensor:
 #        q[i : i + bucket_size] = torch.round(seg * (levels - 1)) / (levels - 1)
 #    return q.view_as(x)
 
-
 def evaluate(model, testloader, criterion, device):
     model.eval()
-    test_loss = 0.0
+
+    torch.cuda.reset_peak_memory_stats()
+
+    correct = 0
+    total = 0
     all_preds, all_labels = [], []
     with torch.no_grad():
         for images, labels in testloader:
             images = images.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
-            with autocast():
+            with torch.amp.autocast('cuda'):
                 outputs = model(images)
                 loss = criterion(outputs, labels)
-            test_loss += loss.item()
-            all_preds.extend(outputs.argmax(1).cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
-    avg_loss = test_loss / len(testloader)
-    acc = accuracy_score(all_labels, all_preds)
-    return avg_loss, acc
 
+            preds = outputs.argmax(1)
+            correct += (preds == label).sum().item()
+            total += label.size(0)
+
+
+    acc = correct / total
+
+
+    return acc
 
 def ann(trainloader, testloader, model, criterion, optimizer, scaler, epochs=30):
     Loss_train, Acc_train = [], []
