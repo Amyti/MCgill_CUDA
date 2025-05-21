@@ -3,18 +3,15 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 import time
 
-# reproducibility
 torch.manual_seed(0)
 device = torch.device("cuda")
 
-# data
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(.5, .5)])
 train_ds = datasets.MNIST('./data', train=True,  download=True, transform=transform)
 test_ds  = datasets.MNIST('./data', train=False, download=True, transform=transform)
 train_loader = DataLoader(train_ds, batch_size=2048, shuffle=True,  pin_memory=True)
 test_loader  = DataLoader(test_ds,  batch_size=2048, shuffle=False, pin_memory=True)
 
-# a slightly bigger CNN
 class ConvMLP(nn.Module):
     def __init__(self):
         super().__init__()
@@ -59,7 +56,6 @@ def benchmark_inference(model, dtype):
     if dtype==torch.float16:
         model.half()
 
-    # prepare one batch for timing
     imgs, _ = next(iter(test_loader))
     imgs = imgs.to(device)
     if dtype==torch.float16:
@@ -69,13 +65,11 @@ def benchmark_inference(model, dtype):
     torch.cuda.reset_peak_memory_stats()
     torch.cuda.synchronize()
 
-    # warmup
     for _ in range(5):
         with torch.no_grad():
             _ = model(imgs)
     torch.cuda.synchronize()
 
-    # timing
     start = time.time()
     for _ in range(100):
         with torch.no_grad():
@@ -83,10 +77,8 @@ def benchmark_inference(model, dtype):
     torch.cuda.synchronize()
     avg_time = (time.time() - start) / 100
 
-    # memory
     peak_mem = torch.cuda.max_memory_allocated() / 1e6  # MB
 
-    # accuracy over entire test set
     correct = 0
     total = 0
     with torch.no_grad():
@@ -110,7 +102,8 @@ net16 = ConvMLP()
 t16 = benchmark_training(net16, use_amp=True)
 inf16, mem16, acc16 = benchmark_inference(net16, torch.float16)
 
-print(f"TRAIN time:  FP32 = {t32:.2f}s,  AMP = {t16:.2f}s")
-print(f"INFER time:  FP32 = {inf32*1e3:.2f} ms,  FP16 = {inf16*1e3:.2f} ms")
-print(f"PEAK MEM:    FP32 = {mem32:.1f} MB,  FP16 = {mem16:.1f} MB")
-print(f"ACCURACY:    FP32 = {acc32:.2f}%,  FP16 = {acc16:.2f}%")
+print(f"train  fp32 : {t32:.2f}s,  f16: {t16:.2f}s")
+print(f"speed up (f32/f16): {(f32/f16):.2f}s")
+print(f"inference  fp32: {inf32*1e3:.2f} ms,  fp16: {inf16*1e3:.2f} ms")
+print(f"memory:    fp32: {mem32:.1f} MB,  fp16: {mem16:.1f} MB")
+print(f"acc:    fp32: {acc32:.2f}%,  fp16: {acc16:.2f}%")
