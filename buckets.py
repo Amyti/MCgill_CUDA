@@ -8,6 +8,7 @@ from sklearn.metrics import accuracy_score
 import random
 import matplotlib.pyplot as plt
 import numpy as np
+import time
 
 SEED = 42
 random.seed(SEED)
@@ -45,7 +46,7 @@ class sANN(nn.Module):
         return self.fc3(x)
 
 model   = sANN().to(device)
-scaler  = GradScaler()                        
+scaler  = torch.amp.GradScaler('cuda')                       
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
@@ -64,14 +65,23 @@ def quantization(x: torch.Tensor, n_bits: int) -> torch.Tensor:
 #        q[i : i + bucket_size] = torch.round(seg * (levels - 1)) / (levels - 1)
 #    return q.view_as(x)
 
+
 def evaluate(model, testloader, criterion, device):
     model.eval()
 
+    with torch.no_grad(), torch.amp.autocast('cuda'):
+        for i in range(1):
+            for images, labels in testloader:
+                test = model(images.to(device))
+            break
+
+
+
     torch.cuda.reset_peak_memory_stats()
+    torch.cuda.synchronize()
 
     correct = 0
     total = 0
-    all_preds, all_labels = [], []
     with torch.no_grad():
         for images, labels in testloader:
             images = images.to(device, non_blocking=True)
@@ -81,16 +91,19 @@ def evaluate(model, testloader, criterion, device):
                 loss = criterion(outputs, labels)
 
             preds = outputs.argmax(1)
-            correct += (preds == label).sum().item()
-            total += label.size(0)
-
-
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
     acc = correct / total
 
+    torch.cuda.synchronize()
+    memoire = torch.cuda.max_memory_allocated() / (1024**2)
 
+
+    print(f"memoire utilisée par le gpu : {memoire:.1f} mb")
     return acc
 
-def ann(trainloader, testloader, model, criterion, optimizer, scaler, epochs=30):
+
+def ann(trainloader, testloader, model, criterion, optimizer, scaler, epochs=15):
     Loss_train, Acc_train = [], []
 
     for epoch in tqdm(range(epochs), desc="entrainement..."):
@@ -101,7 +114,7 @@ def ann(trainloader, testloader, model, criterion, optimizer, scaler, epochs=30)
             labels = labels.to(device, non_blocking=True)
 
             optimizer.zero_grad()
-            with autocast():
+            with torch.amp.autocast('cuda'):
                 outputs = model(images)
                 loss = criterion(outputs, labels)
             scaler.scale(loss).backward()
@@ -127,39 +140,41 @@ def ann(trainloader, testloader, model, criterion, optimizer, scaler, epochs=30)
     return model
 
 
-model = ann(trainloader, testloader, model, criterion, optimizer, scaler, epochs=30)
+model = ann(trainloader, testloader, model, criterion, optimizer, scaler, epochs=15)
 
-test_loss, test_acc = evaluate(model, testloader, criterion, device)
-print(f"before quantization: Acc: {test_acc*100:.2f}%")
+
+torch.cuda.synchronize()
+start = time.time()
+test_acc = evaluate(model, testloader, criterion, device)
+end = time.time()
+
+
+print(f"before quantization: Acc: {test_acc*100:.2f}% in {end - start} seconds")
 
 with torch.no_grad():
     for name, param in model.named_parameters():
         if 'weight' not in name:
             continue
 
-        w = param.data               # tenseur de poids
-        a = w.abs()                  # magnitude
+        w = param.data               
+        a = w.abs()                  
 
-        # Seuils pour 3 buckets
-        thr_low  = a.quantile(0.33)  
-        thr_high = a.quantile(0.66)  
+        t_bas  = a.quantile(0.33)  
+        t_haut = a.quantile(0.66)  
 
-        # Masques
-        mask_small  = (a <= thr_low)
-        mask_medium = (a > thr_low) & (a <= thr_high)
-        mask_large  = (a > thr_high)
+        mask_bas  = (a <= t_bas)
+        mask_mid = (a > t_bas) & (a <= t_haut)
 
-        # Copie de travail
         w_q = w.clone()
 
-        # Quantisation des petits et moyens poids
-        w_q[mask_small ] = quantization(w[mask_small ], 2)  # 2 bits
-        w_q[mask_medium] = quantization(w[mask_medium], 4)  # 4 bits
-        # Les gros poids restent inchangés (FP32)
+        w_q[mask_bas ] = quantization(w[mask_bas ], 2)  
+        w_q[mask_mid] = quantization(w[mask_mid], 4) 
 
-        # Remplacement
         param.data = w_q
 
+torch.cuda.synchronize()
+start = time.time()
+test_acc = evaluate(model, testloader, criterion, device)
+end = time.time()
 
-test_loss, test_acc = evaluate(model, testloader, criterion, device)
-print(f"after quantization: Acc: {test_acc*100:.2f}%")
+print(f"after quantization: Acc: {test_acc*100:.2f}% in {end - start} seconds")
